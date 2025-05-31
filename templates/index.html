@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>4K YouTube Downloader</title>
+<style>
+  /* Reset & base */
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #121212;
+    color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    min-height: 100vh;
+    margin: 0;
+  }
+  h1 {
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    color: #ff4c60;
+    text-shadow: 0 0 10px #ff4c60;
+  }
+  form {
+    display: flex;
+    gap: 0.8rem;
+    width: 100%;
+    max-width: 600px;
+  }
+  input[type="text"] {
+    flex-grow: 1;
+    padding: 0.8rem 1rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    box-shadow: 0 0 8px rgba(255, 76, 96, 0.5);
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    transition: box-shadow 0.3s ease;
+  }
+  input[type="text"]:focus {
+    box-shadow: 0 0 12px #ff4c60;
+  }
+  button {
+    background: #ff4c60;
+    border: none;
+    color: white;
+    padding: 0 1.5rem;
+    font-size: 1.1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s ease;
+  }
+  button:hover {
+    background: #e04050;
+  }
+  #progress {
+    width: 100%;
+    max-width: 600px;
+    height: 20px;
+    border-radius: 10px;
+    margin-top: 1.5rem;
+    appearance: none;
+    background-color: #333;
+    overflow: hidden;
+  }
+  #progress::-webkit-progress-bar {
+    background-color: #333;
+  }
+  #progress::-webkit-progress-value {
+    background: linear-gradient(90deg, #ff4c60, #ff736b);
+    border-radius: 10px;
+  }
+  #progress::-moz-progress-bar {
+    background: linear-gradient(90deg, #ff4c60, #ff736b);
+    border-radius: 10px;
+  }
+  #status {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    min-height: 1.2em;
+  }
+  footer {
+    margin-top: auto;
+    font-size: 0.9rem;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+<h1>4K YouTube Downloader</h1>
+<form id="downloadForm" autocomplete="off">
+  <input type="text" name="url" id="url" placeholder="Enter YouTube URL" required />
+  <button type="submit">Download</button>
+</form>
+
+<progress id="progress" value="0" max="100"></progress>
+<div id="status"></div>
+
+<footer>Made with ❤️ by AirwolfTomato</footer>
+
+<script>
+const form = document.getElementById('downloadForm');
+const progressBar = document.getElementById('progress');
+const status = document.getElementById('status');
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  progressBar.value = 0;
+  status.textContent = 'Starting download...';
+
+  const formData = new FormData(form);
+
+  fetch('/download', {
+    method: 'POST',
+    body: formData
+  }).then(response => {
+    if (!response.ok) throw new Error('Network response was not ok');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) {
+          status.textContent += ' Download stream ended.';
+          return;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        const messages = chunk.split('\n\n');
+        messages.forEach(message => {
+          const lines = message.split('\n');
+          lines.forEach(line => {
+            if (line.startsWith('data: ')) {
+              const percent = parseFloat(line.slice(6));
+              if (!isNaN(percent)) {
+                progressBar.value = percent;
+                status.textContent = `Downloading... ${percent.toFixed(1)}%`;
+              }
+            }
+            if (line.startsWith('event: done')) {
+              status.textContent = 'Download complete!';
+              progressBar.value = 100;
+            }
+          });
+        });
+        read();
+      }).catch(err => {
+        status.textContent = 'Error: ' + err.message;
+      });
+    }
+    read();
+  }).catch(err => {
+    status.textContent = 'Error: ' + err.message;
+  });
+});
+</script>
+</body>
+</html>
