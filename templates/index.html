@@ -5,10 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>4K YouTube Downloader</title>
 <style>
-  /* Reset & base */
-  * {
-    box-sizing: border-box;
-  }
+  /* Base styles */
+  * { box-sizing: border-box; }
   body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: #121212;
@@ -19,29 +17,41 @@
     padding: 2rem;
     min-height: 100vh;
     margin: 0;
+    position: relative; /* needed for canvas */
+    overflow-x: hidden;
   }
-  h1 {
-    margin-bottom: 1.5rem;
-    font-weight: 700;
-    color: #ff4c60;
-    text-shadow: 0 0 10px #ff4c60;
+  /* Particle canvas covers entire background */
+  #particlesCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none; /* so clicks go through */
+    z-index: 0;
+    background: transparent;
   }
-  form {
-    display: flex;
-    gap: 0.8rem;
+  /* Content container above canvas */
+  #contentWrapper {
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 600px;
   }
+
+  h1 { margin-bottom: 1.5rem; color: #ff4c60; text-shadow: 0 0 10px #ff4c60; }
+  form, #formatSection {
+    display: flex; flex-direction: column; gap: 1rem;
+    width: 100%;
+  }
   input[type="text"] {
-    flex-grow: 1;
     padding: 0.8rem 1rem;
     font-size: 1rem;
     border-radius: 8px;
     border: none;
     outline: none;
-    box-shadow: 0 0 8px rgba(255, 76, 96, 0.5);
     background-color: #1e1e1e;
     color: #f0f0f0;
+    box-shadow: 0 0 8px rgba(255, 76, 96, 0.5);
     transition: box-shadow 0.3s ease;
   }
   input[type="text"]:focus {
@@ -51,7 +61,7 @@
     background: #ff4c60;
     border: none;
     color: white;
-    padding: 0 1.5rem;
+    padding: 0.8rem;
     font-size: 1.1rem;
     border-radius: 8px;
     cursor: pointer;
@@ -63,7 +73,6 @@
   }
   #progress {
     width: 100%;
-    max-width: 600px;
     height: 20px;
     border-radius: 10px;
     margin-top: 1.5rem;
@@ -89,79 +98,427 @@
     text-align: center;
     min-height: 1.2em;
   }
+  #videoInfo {
+    margin-top: 2rem;
+    text-align: center;
+  }
+  #videoInfo img {
+    max-width: 300px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px #ff4c60;
+  }
   footer {
     margin-top: auto;
     font-size: 0.9rem;
     color: #666;
   }
+  label {
+    font-weight: 600;
+  }
+  select {
+    background-color: #1e1e1e;
+    color: #f0f0f0;
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    outline: none;
+    box-shadow: 0 0 8px rgba(255, 76, 96, 0.5);
+    transition: box-shadow 0.3s ease;
+    cursor: pointer;
+  }
+  select:focus {
+    box-shadow: 0 0 12px #ff4c60;
+  }
+  #formatSection > div {
+    display: flex;
+    flex-direction: column;
+  }
 </style>
 </head>
 <body>
-<h1>4K YouTube Downloader</h1>
-<form id="downloadForm" autocomplete="off">
-  <input type="text" name="url" id="url" placeholder="Enter YouTube URL" required />
-  <button type="submit">Download</button>
-</form>
+<canvas id="particlesCanvas"></canvas>
+<div id="contentWrapper">
+  <h1>4K YouTube Downloader</h1>
 
-<progress id="progress" value="0" max="100"></progress>
-<div id="status"></div>
+  <!-- Step 1: URL form -->
+  <form id="urlForm" autocomplete="off">
+    <input type="text" name="url" id="url" placeholder="Enter YouTube URL" required />
+    <button type="submit">Load Video</button>
+  </form>
 
-<footer>Made with ❤️ by AirwolfTomato</footer>
+  <!-- Step 2: Format selection (hidden initially) -->
+  <div id="formatSection" style="display:none;">
+    <div id="videoInfo"></div>
+
+    <div>
+      <label for="typeSelect">Select Type:</label>
+      <select id="typeSelect"></select>
+    </div>
+    <div>
+      <label for="formatSelect">Select Quality:</label>
+      <select id="formatSelect"></select>
+    </div>
+
+    <button id="downloadBtn">Download</button>
+  </div>
+
+  <!-- Progress and status -->
+  <progress id="progress" value="0" max="100" style="display:none;"></progress>
+  <div id="status"></div>
+
+  <footer>Made with ❤️ by AirwolfTomato</footer>
+</div>
 
 <script>
-const form = document.getElementById('downloadForm');
-const progressBar = document.getElementById('progress');
-const status = document.getElementById('status');
+  // Particle background animation
+  const canvas = document.getElementById('particlesCanvas');
+  const ctx = canvas.getContext('2d');
+  let width, height;
+  const particlesCount = 60;
+  const particles = [];
 
-form.addEventListener('submit', (e) => {
-  e.preventDefault();
+  function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width * devicePixelRatio;
+    canvas.height = height * devicePixelRatio;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+  }
+
+  class Particle {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      this.x = Math.random() * width;
+      this.y = Math.random() * height;
+      this.size = Math.random() * 1.5 + 0.5;
+      this.speedX = (Math.random() - 0.5) * 0.3; // slow drift left/right
+      this.speedY = (Math.random() - 0.5) * 0.3; // slow drift up/down
+      this.opacity = Math.random() * 0.5 + 0.3;
+      this.color = `rgba(255, 76, 96, ${this.opacity})`; // soft pinkish
+    }
+    update() {
+      this.x += this.speedX;
+      this.y += this.speedY;
+      if (this.x < 0) this.x = width;
+      else if (this.x > width) this.x = 0;
+      if (this.y < 0) this.y = height;
+      else if (this.y > height) this.y = 0;
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.fillStyle = this.color;
+      ctx.shadowColor = 'rgba(255, 76, 96, 0.7)';
+      ctx.shadowBlur = 4;
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function initParticles() {
+    particles.length = 0;
+    for (let i = 0; i < particlesCount; i++) {
+      particles.push(new Particle());
+    }
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, width, height);
+    particles.forEach(p => {
+      p.update();
+      p.draw();
+    });
+    requestAnimationFrame(animate);
+  }
+
+  window.addEventListener('resize', () => {
+    resize();
+    initParticles();
+  });
+
+  resize();
+  initParticles();
+  animate();
+
+  // --- App JS ---
+
+  const urlForm = document.getElementById('urlForm');
+  const formatSection = document.getElementById('formatSection');
+  const videoInfoDiv = document.getElementById('videoInfo');
+  const typeSelect = document.getElementById('typeSelect');
+  const formatSelect = document.getElementById('formatSelect');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const progressBar = document.getElementById('progress');
+  const status = document.getElementById('status');
+
+  let currentUrl = null;
+  let allFormats = [];
+
+  urlForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = document.getElementById('url').value.trim();
+    if (!url) return;
+
+    status.textContent = "Fetching video info...";
+    progressBar.style.display = 'none';
+    formatSection.style.display = 'none';
+    videoInfoDiv.innerHTML = '';
+    typeSelect.innerHTML = '';
+    formatSelect.innerHTML = '';
+    allFormats = [];
+
+    try {
+      const formData = new FormData();
+      formData.append('url', url);
+
+      const res = await fetch('/video_info', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error("Failed to fetch video info");
+
+      const data = await res.json();
+
+      if(data.error) {
+        status.textContent = "Error: " + data.error;
+        return;
+      }
+
+      currentUrl = url;
+      allFormats = data.formats || [];
+
+      // Show video title + thumbnail
+      videoInfoDiv.innerHTML = `
+        <h2>${data.title}</h2>
+        <img src="${data.thumbnail}" alt="Thumbnail" />
+      `;
+
+      populateTypeSelect();
+      updateFormats();
+
+      formatSection.style.display = 'flex';
+      status.textContent = "";
+
+    } catch (err) {
+      status.textContent = "Error: " + err.message;
+    }
+  });
+
+  function populateTypeSelect() {
+    let exts = [...new Set(allFormats.map(f => f.ext).filter(ext => ext !== 'mhtml'))].sort();
+
+    // Ensure mp3 is present at front if available
+    if (allFormats.some(f => f.ext === 'mp3') && !exts.includes('mp3')) {
+      exts.unshift('mp3');
+    }
+
+    typeSelect.innerHTML = '';
+    exts.forEach(ext => {
+      const option = document.createElement('option');
+      option.value = ext;
+      option.textContent = ext.toUpperCase();
+      typeSelect.appendChild(option);
+    });
+
+    if (exts.length > 0) {
+      typeSelect.value = exts[0];
+    }
+  }
+
+  typeSelect.addEventListener('change', () => {
+    updateFormats();
+  });
+
+  function updateFormats() {
+    const selectedType = typeSelect.value;
+    formatSelect.innerHTML = '';
+
+    const filteredFormats = allFormats.filter(f => {
+      if (f.ext !== selectedType) return false;
+
+      // Must have valid format_id and meaningful size/quality info
+      if (!f.format_id) return false;
+      if (!(f.height || f.abr || f.filesize)) return false;
+
+      const combinedText = [
+        f.format_note || '',
+        f.format_id || '',
+        f.quality_label || '',
+        f.format || ''
+      ].join(' ').toLowerCase();
+
+      // Keywords to exclude
+      const excludeKeywords = [
+        'low quality', 'high quality',
+        'dash audio', 'encrypted',
+        'audio only', 'unknown'
+      ];
+      if (excludeKeywords.some(word => combinedText.includes(word))) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if(filteredFormats.length === 0) {
+      const option = document.createElement('option');
+      option.textContent = 'No formats available';
+      option.disabled = true;
+      option.selected = true;
+      formatSelect.appendChild(option);
+      return;
+    }
+
+    // Sort by video height or audio bitrate descending
+    filteredFormats.sort((a, b) => {
+      if (a.height && b.height) return b.height - a.height;
+      if (a.abr && b.abr) return b.abr - a.abr;
+      return 0;
+    });
+
+    // Deduplicate by resolution or bitrate to avoid duplicates
+    const uniqueMap = new Map();
+    filteredFormats.forEach(f => {
+      let key = '';
+      if (f.height) {
+        key = `${f.height}p_${f.ext}`;
+      } else if (f.abr) {
+        key = `${f.abr}kbps_${f.ext}`;
+      } else {
+        key = `other_${(f.format_note || f.ext).replace(/\s+/g, '_')}_${f.ext}`;
+      }
+      if (!uniqueMap.has(key)) uniqueMap.set(key, f);
+    });
+
+    uniqueMap.forEach(f => {
+      let label = '';
+      if (f.height) label = `${f.height}p`;
+      else if (f.abr) label = `${f.abr} kbps Audio`;
+      else label = (f.format_note || f.ext).replace(/low quality|high quality/gi, '').trim() || f.ext;
+
+      let sizeMB = f.filesize ? (f.filesize / (1024*1024)).toFixed(1) + ' MB' : 'Unknown size';
+
+      const option = document.createElement('option');
+      option.value = f.format_id;
+      option.textContent = `${label} (${f.ext}, ${sizeMB})`;
+      formatSelect.appendChild(option);
+    });
+  }
+
+downloadBtn.addEventListener('click', async () => {
+  if (!currentUrl) {
+    alert("Please enter a valid YouTube URL first.");
+    return;
+  }
+  const formatId = formatSelect.value;
+  if (!formatId) {
+    alert("Please select a format to download.");
+    return;
+  }
+
+  // Find selected format object from allFormats by format_id
+  const selectedFormat = allFormats.find(f => f.format_id === formatId);
+  if (!selectedFormat) {
+    alert("Selected format info not found.");
+    return;
+  }
+
+  downloadBtn.disabled = true;
   progressBar.value = 0;
-  status.textContent = 'Starting download...';
+  progressBar.style.display = 'block';
+  status.textContent = "Starting download...";
 
-  const formData = new FormData(form);
+  // Disable inputs during download
+  urlForm.querySelectorAll('input, button').forEach(el => el.disabled = true);
+  typeSelect.disabled = true;
+  formatSelect.disabled = true;
 
-  fetch('/download', {
-    method: 'POST',
-    body: formData
-  }).then(response => {
-    if (!response.ok) throw new Error('Network response was not ok');
+  const formData = new FormData();
+  formData.append('url', currentUrl);
+  formData.append('format_id', formatId);
+  formData.append('ext', selectedFormat.ext || '');            // Pass extension
+  formData.append('format_label', selectedFormat.format_note || selectedFormat.quality_label || '');  // Pass label if available
+
+  // Optional: Timeout for stalled downloads (2 minutes)
+  const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 1000;
+  let timeoutId;
+
+  try {
+    const response = await fetch('/download', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
 
     const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
+    const decoder = new TextDecoder("utf-8");
+    let done = false;
+    let buffer = '';
 
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          status.textContent += ' Download stream ended.';
-          return;
-        }
-        const chunk = decoder.decode(value, { stream: true });
-        const messages = chunk.split('\n\n');
-        messages.forEach(message => {
-          const lines = message.split('\n');
-          lines.forEach(line => {
-            if (line.startsWith('data: ')) {
-              const percent = parseFloat(line.slice(6));
-              if (!isNaN(percent)) {
-                progressBar.value = percent;
-                status.textContent = `Downloading... ${percent.toFixed(1)}%`;
-              }
-            }
-            if (line.startsWith('event: done')) {
-              status.textContent = 'Download complete!';
-              progressBar.value = 100;
-            }
-          });
-        });
-        read();
-      }).catch(err => {
-        status.textContent = 'Error: ' + err.message;
-      });
+    function resetTimeout() {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        throw new Error('Download stalled. Please try again.');
+      }, DOWNLOAD_TIMEOUT_MS);
     }
-    read();
-  }).catch(err => {
-    status.textContent = 'Error: ' + err.message;
-  });
+
+    resetTimeout();
+
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      resetTimeout();
+
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        let lines = buffer.split('\n\n');
+
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6).trim();
+            const percent = parseFloat(dataStr);
+            if (!isNaN(percent)) {
+              progressBar.value = percent;
+              status.textContent = `Downloading... ${percent.toFixed(2)}%`;
+            } else {
+              status.textContent = dataStr;
+            }
+          } else if (line.startsWith("event: done")) {
+            status.textContent = "Download complete!";
+            progressBar.value = 100;
+
+            setTimeout(() => {
+              progressBar.style.display = 'none';
+              downloadBtn.disabled = false;
+              urlForm.querySelectorAll('input, button').forEach(el => el.disabled = false);
+              typeSelect.disabled = false;
+              formatSelect.disabled = false;
+            }, 1200);
+          } else if (line.startsWith("event: error")) {
+            const errMsg = line.split('\n').find(l => l.startsWith('data: '))?.slice(6).trim() || "Error";
+            status.textContent = `Error: ${errMsg}`;
+            progressBar.style.display = 'none';
+            downloadBtn.disabled = false;
+            urlForm.querySelectorAll('input, button').forEach(el => el.disabled = false);
+            typeSelect.disabled = false;
+            formatSelect.disabled = false;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    status.textContent = "Error: " + err.message;
+    progressBar.style.display = 'none';
+    downloadBtn.disabled = false;
+    urlForm.querySelectorAll('input, button').forEach(el => el.disabled = false);
+    typeSelect.disabled = false;
+    formatSelect.disabled = false;
+  }
 });
 </script>
 </body>
