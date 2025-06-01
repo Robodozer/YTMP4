@@ -34,7 +34,7 @@ def video_info():
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
-        'cookiesfrombrowser': 'chrome:~/.var/app/com.google.Chrome/',
+        'cookiesfrombrowser': ['chrome']
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -87,7 +87,7 @@ def download_video(url, format_id, q):
         'progress_hooks': [progress_hook],
         'quiet': True,
         'nopart': True,
-        'cookiesfrombrowser': 'chrome:~/.var/app/com.google.Chrome/',
+        'cookiesfrombrowser': ['chrome']
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
