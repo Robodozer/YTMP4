@@ -8,7 +8,6 @@ import subprocess
 app = Flask(__name__)
 
 # Path to your exported YouTube cookies file (export using browser extension)
-COOKIES_FILE = 'cookies.txt'  # Make sure this file is in your app directory or adjust path accordingly
 
 def get_download_path():
     import platform
@@ -35,7 +34,7 @@ def video_info():
     ydl_opts = {
         'quiet': True,
         'skip_download': True,
-        'cookiefile': COOKIES_FILE,
+        'cookiesfrombrowser': 'chrome:~/.var/app/com.google.Chrome/',
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -88,7 +87,7 @@ def download_video(url, format_id, q):
         'progress_hooks': [progress_hook],
         'quiet': True,
         'nopart': True,
-        'cookiefile': COOKIES_FILE,
+        'cookiesfrombrowser': 'chrome:~/.var/app/com.google.Chrome/',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
